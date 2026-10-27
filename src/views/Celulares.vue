@@ -1,0 +1,23 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { api, bolivianos } from '../services/api'
+const rows = ref([]), buscar = ref(''), abierto = ref(false), editId = ref(null), error = ref(''), aviso = ref(''), guardando = ref(false)
+const vacio = () => ({ marca: '', modelo: '', precio: '', stock: '' })
+const form = ref(vacio())
+const filtrados = computed(() => rows.value.filter(x => `${x.marca} ${x.modelo}`.toLowerCase().includes(buscar.value.toLowerCase())))
+async function cargar() { try { rows.value = await api.listar('celulares'); error.value = '' } catch(e) { error.value = e.message } }
+onMounted(cargar)
+function nuevo() { editId.value = null; form.value = vacio(); abierto.value = true; aviso.value = '' }
+function editar(c) { editId.value = c.id; form.value = { marca: c.marca, modelo: c.modelo, precio: c.precio, stock: c.stock }; abierto.value = true; aviso.value = '' }
+async function guardar() {
+ if (!form.value.marca.trim() || !form.value.modelo.trim() || Number(form.value.precio) <= 0 || !Number.isInteger(Number(form.value.stock)) || Number(form.value.stock) < 0) { error.value = 'Revisa los datos: precio mayor a cero y stock entero no negativo.'; return }
+ guardando.value = true
+ try { const data = { marca: form.value.marca.trim(), modelo: form.value.modelo.trim(), precio: Number(form.value.precio), stock: Number(form.value.stock) }; if (editId.value) await api.editar('celulares', editId.value, data); else await api.crear('celulares', data); abierto.value = false; aviso.value = 'Celular guardado correctamente.'; await cargar() } catch(e) { error.value = e.message } finally { guardando.value = false }
+}
+async function eliminar(c) { if (!confirm(`¿Eliminar ${c.marca} ${c.modelo}?`)) return; try { await api.eliminar('celulares', c.id); aviso.value = 'Celular eliminado.'; await cargar() } catch(e) { error.value = e.message } }
+</script>
+<template><div class="page-heading"><div><div class="eyebrow">INVENTARIO</div><h1>Celulares</h1><p>Administra los modelos, precios y existencias de tu tienda.</p></div><button class="btn btn-primary" @click="nuevo"><i class="bi bi-plus-lg me-2"></i> Nuevo celular</button></div>
+<div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button class="btn-close float-end" @click="error = ''"></button></div><div v-if="aviso" class="alert alert-success">{{ aviso }}</div>
+<div v-if="abierto" class="panel mb-4"><div class="panel-title"><h3>{{ editId ? 'Editar celular' : 'Registrar celular' }}</h3><button class="btn-close" @click="abierto = false"></button></div><form @submit.prevent="guardar"><div class="row g-3"><div class="col-md-6"><label class="form-label">Marca</label><input class="form-control" v-model="form.marca" maxlength="60" required placeholder="Ej. Samsung" /></div><div class="col-md-6"><label class="form-label">Modelo</label><input class="form-control" v-model="form.modelo" maxlength="80" required placeholder="Ej. Galaxy A55" /></div><div class="col-md-6"><label class="form-label">Precio (Bs)</label><input class="form-control" type="number" min="0.01" step="0.01" v-model="form.precio" required /></div><div class="col-md-6"><label class="form-label">Stock</label><input class="form-control" type="number" min="0" step="1" v-model="form.stock" required /></div></div><div class="d-flex gap-2 mt-4"><button class="btn btn-primary" :disabled="guardando">{{ guardando ? 'Guardando...' : 'Guardar celular' }}</button><button type="button" class="btn btn-light" @click="abierto = false">Cancelar</button></div></form></div>
+<div class="panel"><div class="panel-title"><h3>Inventario <span class="count-badge">{{ rows.length }}</span></h3><div class="search-box"><i class="bi bi-search"></i><input v-model="buscar" placeholder="Buscar por marca o modelo" /></div></div><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Marca</th><th>Modelo</th><th>Precio de venta</th><th>Stock</th><th class="text-end">Acciones</th></tr></thead><tbody><tr v-for="c in filtrados" :key="c.id"><td class="fw-semibold">{{ c.marca }}</td><td>{{ c.modelo }}</td><td>{{ bolivianos(c.precio) }}</td><td><span class="stock-pill" :class="Number(c.stock) <= 3 ? 'low' : ''">{{ c.stock }} unidades</span></td><td class="text-end"><button class="btn btn-sm btn-outline-primary me-2" @click="editar(c)" title="Editar"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger" @click="eliminar(c)" title="Eliminar"><i class="bi bi-trash"></i></button></td></tr><tr v-if="!filtrados.length"><td colspan="5" class="empty-cell">No se encontraron celulares.</td></tr></tbody></table></div></div>
+</template>

@@ -1,0 +1,28 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { api, bolivianos } from '../services/api'
+const rows = ref([]), celulares = ref([]), buscar = ref(''), abierto = ref(false), editId = ref(null), error = ref(''), aviso = ref(''), guardando = ref(false)
+const ahora = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` }
+const vacio = () => ({ fecha: ahora(), cliente: '', celularId: '', imei: '' })
+const form = ref(vacio())
+const seleccionado = computed(() => celulares.value.find(c => String(c.id) === String(form.value.celularId)))
+const total = computed(() => Number(seleccionado.value?.precio || 0))
+const filtrados = computed(() => rows.value.filter(x => `${x.cliente} ${x.producto} ${x.imei || ''}`.toLowerCase().includes(buscar.value.toLowerCase())))
+async function cargar() { try { [rows.value, celulares.value] = await Promise.all([api.listar('ventas'), api.listar('celulares')]); error.value = '' } catch(e) { error.value = e.message } }
+onMounted(cargar)
+function nuevo() { editId.value = null; form.value = vacio(); abierto.value = true; aviso.value = '' }
+function editar(v) { editId.value = v.id; form.value = { fecha: (v.fecha || '').length === 10 ? v.fecha + 'T12:00' : v.fecha, cliente: v.cliente, celularId: String(v.celularId), imei: v.imei || '' }; abierto.value = true; aviso.value = '' }
+async function guardar() {
+ if (!form.value.cliente.trim() || !form.value.fecha || !seleccionado.value || !/^\d{15}$/.test(form.value.imei)) { error.value = 'Completa cliente, fecha, celular y un IMEI de 15 dígitos.'; return }
+ if (rows.value.some(v => v.imei === form.value.imei && String(v.id) !== String(editId.value))) { error.value = 'Este IMEI ya figura en otra venta.'; return }
+ guardando.value = true
+ try { const c = seleccionado.value; const data = { fecha: form.value.fecha, cliente: form.value.cliente.trim(), celularId: String(c.id), producto: `${c.marca} ${c.modelo}`, imei: form.value.imei, cantidad: 1, precioUnitario: Number(c.precio), total: total.value }; if (editId.value) await api.editar('ventas', editId.value, data); else await api.crear('ventas', data); abierto.value = false; aviso.value = 'Venta guardada correctamente.'; await cargar() } catch(e) { error.value = e.message } finally { guardando.value = false }
+}
+async function eliminar(v) { if (!confirm(`¿Eliminar la venta de ${v.cliente}?`)) return; try { await api.eliminar('ventas', v.id); aviso.value = 'Venta eliminada.'; await cargar() } catch(e) { error.value = e.message } }
+</script>
+<template><div class="page-heading"><div><div class="eyebrow">OPERACIONES</div><h1>Ventas</h1><p>Registra las ventas realizadas y consulta su historial.</p></div><button class="btn btn-primary" @click="nuevo"><i class="bi bi-plus-lg me-2"></i> Nueva venta</button></div>
+
+<div v-if="error" class="alert alert-danger">{{ error }} <button class="btn-close float-end" @click="error = ''"></button></div><div v-if="aviso" class="alert alert-success">{{ aviso }}</div>
+<div v-if="abierto" class="panel mb-4"><div class="panel-title"><h3>{{ editId ? 'Editar venta' : 'Registrar venta' }}</h3><button class="btn-close" @click="abierto = false"></button></div><form @submit.prevent="guardar"><div class="row g-3"><div class="col-md-6"><label class="form-label">Fecha</label><input class="form-control" type="datetime-local" v-model="form.fecha" required /></div><div class="col-md-6"><label class="form-label">Cliente</label><input class="form-control" v-model="form.cliente" required maxlength="100" placeholder="Nombre del cliente" /></div><div class="col-md-8"><label class="form-label">Celular</label><select class="form-select" v-model="form.celularId" required><option value="">Selecciona un celular</option><option v-for="c in celulares" :key="c.id" :value="String(c.id)">{{ c.marca }} {{ c.modelo }} — {{ bolivianos(c.precio) }}</option></select></div><div class="col-md-4"><label class="form-label">IMEI (15 dígitos)</label><input class="form-control" v-model="form.imei" inputmode="numeric" pattern="[0-9]{15}" minlength="15" maxlength="15" required placeholder="Ej. 356789012345678" /></div></div><div class="total-preview">Total de venta: <strong>{{ bolivianos(total) }}</strong></div><div class="d-flex gap-2 mt-3"><button class="btn btn-primary" :disabled="guardando || !celulares.length">{{ guardando ? 'Guardando...' : 'Guardar venta' }}</button><button type="button" class="btn btn-light" @click="abierto = false">Cancelar</button></div></form></div>
+<div class="panel"><div class="panel-title"><h3>Historial de ventas <span class="count-badge">{{ rows.length }}</span></h3><div class="search-box"><i class="bi bi-search"></i><input v-model="buscar" placeholder="Buscar cliente o celular" /></div></div><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Celular</th><th>IMEI</th><th>Total</th><th class="text-end">Acciones</th></tr></thead><tbody><tr v-for="v in filtrados" :key="v.id"><td>{{ v.fecha }}</td><td class="fw-semibold">{{ v.cliente }}</td><td>{{ v.producto }}</td><td>{{ v.imei || "—" }}</td><td class="fw-semibold">{{ bolivianos(v.total) }}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary me-2" @click="editar(v)" title="Editar"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger" @click="eliminar(v)" title="Eliminar"><i class="bi bi-trash"></i></button></td></tr><tr v-if="!filtrados.length"><td colspan="6" class="empty-cell">No se encontraron ventas.</td></tr></tbody></table></div></div>
+</template>
